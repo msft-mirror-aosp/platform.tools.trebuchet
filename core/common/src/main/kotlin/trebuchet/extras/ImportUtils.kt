@@ -31,22 +31,29 @@ fun reportImportProgress(read: Long, total: Long) {
     }
 }
 
-fun parseTrace(file: File): Model {
+fun parseTrace(file: File, verbose : Boolean = true): Model {
     val before = System.nanoTime()
     val task = ImportTask(PrintlnImportFeedback())
-    val model = task.import(InputStreamAdapter(file, ::reportImportProgress))
+    val model = task.import(InputStreamAdapter(file, if (verbose) ::reportImportProgress else null))
     val after = System.nanoTime()
-    val duration = (after - before) / 1000000
-    println("Parsing ${file.name} took ${duration}ms")
+
+    if (verbose) {
+        val duration = (after - before) / 1000000
+        println("Parsing ${file.name} took ${duration}ms")
+    }
+
     return model
 }
 
 fun findSampleData(): String {
-    var path = "sample_data"
-    while (!File(path).exists()) {
-        path = "../" + path
+    var dir = File(".").absoluteFile
+    while (!File(dir, "sample_data").exists()) {
+        dir = dir.parentFile
+        if (dir == null) {
+            throw IllegalStateException("Can't find sample_data")
+        }
     }
-    return path
+    return File(dir, "sample_data").absolutePath
 }
 
 fun openSample(name: String): Model {

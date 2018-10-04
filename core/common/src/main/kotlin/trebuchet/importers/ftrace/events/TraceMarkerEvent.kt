@@ -36,12 +36,26 @@ class EndSliceEvent : FtraceEventDetails {
     }
 }
 
-class CounterSliceEvent(val tgid: Int, val name: String, val value: Int) : FtraceEventDetails {
+class CounterSliceEvent(val tgid: Int, val name: String, val value: Long) : FtraceEventDetails {
     override fun import(event: FtraceEvent, state: FtraceImporterState) {
         state.threadFor(event.pid, tgid, event.task).process
                 .addCounterSample(name, event.timestamp, value)
     }
 
+}
+
+class StartAsyncSliceEvent(val tgid: Int, val name: String, val cookie: Int) : FtraceEventDetails {
+    override fun import(event: FtraceEvent, state: FtraceImporterState) {
+        state.processFor(tgid, event.task).asyncSlicesBuilder
+            .openAsyncSlice(event.pid, name, cookie, event.timestamp)
+    }
+}
+
+class FinishAsyncSliceEvent(val tgid: Int, val name: String, val cookie: Int) : FtraceEventDetails {
+    override fun import(event: FtraceEvent, state: FtraceImporterState) {
+        state.processFor(tgid, event.task).asyncSlicesBuilder
+            .closeAsyncSlice(event.pid, name, cookie, event.timestamp)
+    }
 }
 
 private fun BufferReader.readBeginSlice(): BeginSliceEvent {
@@ -60,8 +74,30 @@ private fun BufferReader.readCounter(): CounterSliceEvent {
     skip()
     val name = stringTo { skipUntil { it == '|'.toByte() } }
     skip()
-    val value = readInt()
+    val value = readLong()
     return CounterSliceEvent(tgid, name, value)
+}
+
+private fun BufferReader.readOpenAsyncSlice(): StartAsyncSliceEvent {
+    // Async start format: S|<tgid>|<title>|<cookie>
+    skipCount(2)
+    val tgid = readInt()
+    skip()
+    val name = stringTo { skipUntil {  it == '|'.toByte() } }
+    skip()
+    val cookie = readInt()
+    return StartAsyncSliceEvent(tgid, name, cookie)
+}
+
+private fun BufferReader.readCloseAsyncSlice(): FinishAsyncSliceEvent {
+    // Async start format: F|<tgid>|<title>|<cookie>
+    skipCount(2)
+    val tgid = readInt()
+    skip()
+    val name = stringTo { skipUntil {  it == '|'.toByte() } }
+    skip()
+    val cookie = readInt()
+    return FinishAsyncSliceEvent(tgid, name, cookie)
 }
 
 class ParentTSEvent(val parentTimestamp: Double) : FtraceEventDetails {
@@ -80,6 +116,8 @@ object TraceMarkerEvent {
     const val Begin = 'B'.toByte()
     const val End = 'E'.toByte()
     const val Counter = 'C'.toByte()
+    const val Start = 'S'.toByte()
+    const val Finish = 'F'.toByte()
 
     val register: EventRegistryEntry = { sharedState ->
 
@@ -106,6 +144,8 @@ object TraceMarkerEvent {
                     Begin -> readBeginSlice()
                     End -> EndSliceEvent()
                     Counter -> readCounter()
+                    Start -> readOpenAsyncSlice()
+                    Finish -> readCloseAsyncSlice()
                     else -> readClockSyncMarker(state)
                 }
             }
