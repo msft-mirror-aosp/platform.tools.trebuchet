@@ -25,5 +25,7 @@ include 'core:common'
 
 include 'trebuchet:analyzer'
 include 'trebuchet:startup-analyzer'
+include 'trebuchet:startup-common'
+include 'trebuchet:startup-summarizer'
 include 'trebuchet:traceutils'
 include 'trebuchet:viewer'

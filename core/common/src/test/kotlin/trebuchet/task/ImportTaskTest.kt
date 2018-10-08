@@ -24,6 +24,7 @@ import trebuchet.io.BufferProducer
 import trebuchet.io.DataSlice
 import trebuchet.io.asSlice
 import trebuchet.model.Model
+import trebuchet.model.fragments.AsyncSlice
 import trebuchet.queries.SliceQueries
 import java.io.File
 
@@ -49,7 +50,7 @@ class ImportTaskTest {
         val counter = process.counters.find { it.name == counterName }
         assertNotNull(counter)
         counter!!
-        assertEquals(2, counter.events.filter { it.count == 2 }.size)
+        assertEquals(2, counter.events.filter { it.count == 2L }.size)
         assertFalse(counter.events.any { it.count < 0 || it.count > 2})
     }
 
@@ -58,6 +59,16 @@ class ImportTaskTest {
         val process = model.processes[6381]!!
         val thread = process.threads.find { it.name == "RenderThread" }!!
         assertEquals(6506, thread.id)
+
+        val inputEvent4 = process.asyncSlices.find {
+            it.name == "deliverInputEvent" && it.cookie == 4
+        }
+        assertNotNull(inputEvent4)
+        inputEvent4!!
+        assertEquals(6381, inputEvent4.startThreadId)
+        assertEquals(6381, inputEvent4.endThreadId)
+        assertEquals(4493.665365, inputEvent4.startTime, 0.0)
+        assertEquals(4493.725982, inputEvent4.endTime, 0.0)
     }
 
     private fun import(filename: String): Model {

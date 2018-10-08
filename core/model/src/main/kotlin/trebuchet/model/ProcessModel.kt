@@ -16,6 +16,7 @@
 
 package trebuchet.model
 
+import trebuchet.model.fragments.AsyncSlice
 import trebuchet.model.fragments.ProcessModelFragment
 
 class ProcessModel constructor(val model: Model, fragment: ProcessModelFragment) {
@@ -23,6 +24,7 @@ class ProcessModel constructor(val model: Model, fragment: ProcessModelFragment)
     val name: String = fragment.name ?: "<$id>"
     val threads: List<ThreadModel>
     val counters: List<Counter>
+    val asyncSlices: List<AsyncSlice>
     val hasContent: Boolean
 
     init {
@@ -34,6 +36,7 @@ class ProcessModel constructor(val model: Model, fragment: ProcessModelFragment)
         threadBuilder.sortBy { it.id }
         threads = threadBuilder
         counters = fragment.counters.values.filter { it.events.isNotEmpty() }.map { Counter(it) }.toList()
-        hasContent = counters.isNotEmpty() || threads.any { it.hasContent }
+        asyncSlices = fragment.asyncSlices
+        hasContent = counters.isNotEmpty() || asyncSlices.isNotEmpty() || threads.any { it.hasContent }
     }
 }
