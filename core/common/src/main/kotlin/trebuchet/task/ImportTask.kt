@@ -30,11 +30,8 @@ class ImportTask(private val importFeedback: ImportFeedback) {
 
     fun import(source: BufferProducer): Model {
         var model: Model? = null
-        val duration = measureTimeMillis {
-            extractOrImport(source)
-            model = finish()
-        }
-        println("Took ${duration}ms to import")
+        extractOrImport(source)
+        model = finish()
         return model!!
     }
 

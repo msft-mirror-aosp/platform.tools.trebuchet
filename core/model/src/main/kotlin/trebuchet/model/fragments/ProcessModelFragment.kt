@@ -37,6 +37,13 @@ class ProcessModelFragment(id: Int, var name: String? = null,
 
     val threads: Collection<ThreadModelFragment> get() = _threads.values
     val counters: Map<String, CounterFragment> get() = _counters
+    val asyncSlicesBuilder = AsyncSlicesBuilder()
+    val asyncSlices: List<AsyncSlice> get() {
+        if (asyncSlicesBuilder.openSlices.isNotEmpty()) {
+            throw IllegalStateException("AsyncSlicesBuilder has open slices, not finished");
+        }
+        return asyncSlicesBuilder.asyncSlices
+    }
 
     fun threadFor(pid: Int, name: String? = null): ThreadModelFragment {
         var thread = _threads[pid]
@@ -49,7 +56,7 @@ class ProcessModelFragment(id: Int, var name: String? = null,
         return thread
     }
 
-    fun addCounterSample(name: String, timestamp: Double, value: Int) {
+    fun addCounterSample(name: String, timestamp: Double, value: Long) {
         _counters.getOrPut(name, { CounterFragment(name) }).events.add(timestamp hasCount value)
     }
 

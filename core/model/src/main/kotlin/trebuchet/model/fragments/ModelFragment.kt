@@ -27,6 +27,7 @@ class ModelFragment {
     fun autoCloseOpenSlices() {
         // And then close it
         processes.forEach {
+            it.asyncSlicesBuilder.autoCloseOpenSlices(globalEndTime)
             it.threads.forEach {
                 it.slicesBuilder.autoCloseOpenSlices(globalEndTime)
             }

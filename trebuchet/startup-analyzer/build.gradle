@@ -17,7 +17,6 @@
 apply plugin: 'java'
 apply plugin: 'application'
 apply plugin: 'kotlin-platform-jvm'
-apply plugin: 'com.github.johnrengelman.shadow'
 
 sourceCompatibility = 1.8
 mainClassName = "StartupAnalyzerKt"
@@ -29,5 +28,6 @@ sourceSets {
 dependencies {
     compile project(":core:common")
     compile project(":core:model")
+    compile project(":trebuchet:startup-common")
     compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
 }
