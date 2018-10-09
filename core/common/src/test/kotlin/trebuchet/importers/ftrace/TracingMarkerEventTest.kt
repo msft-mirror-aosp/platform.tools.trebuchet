@@ -55,4 +55,18 @@ class TracingMarkerEventTest {
         val details = detailsFor<FtraceEventDetails>("tracing_mark_write: this is unknown")
         assertSame(NoDetails, details)
     }
+
+    @Test fun testStartAsync() {
+        val start = detailsFor<StartAsyncSliceEvent>("tracing_mark_write: S|1150|launching: com.google.android.calculator|0")
+        assertEquals(1150, start.tgid)
+        assertEquals("launching: com.google.android.calculator", start.name)
+        assertEquals(0, start.cookie)
+    }
+
+    @Test fun testFinishAsync() {
+        val finish = detailsFor<FinishAsyncSliceEvent>("tracing_mark_write: F|1150|launching: com.google.android.calculator|0")
+        assertEquals(1150, finish.tgid)
+        assertEquals("launching: com.google.android.calculator", finish.name)
+        assertEquals(0, finish.cookie)
+    }
 }

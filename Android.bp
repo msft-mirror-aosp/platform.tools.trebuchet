@@ -32,6 +32,18 @@ java_library_host {
     no_framework_libs: true,
 }
 
+java_library_host {
+    name: "trebuchet-startup-common",
+    defaults: ["trebuchet-defaults"],
+    srcs: [
+        "trebuchet/startup-common/src/**/*.kt",
+    ],
+    libs: [
+        "trebuchet-core",
+    ],
+    no_framework_libs: true,
+}
+
 java_test_host {
     name: "trebuchet-core-tests",
     defaults: ["trebuchet-defaults"],
@@ -69,6 +81,7 @@ java_binary_host {
     ],
     static_libs: [
         "trebuchet-core",
+        "trebuchet-startup-common"
     ],
 }
 

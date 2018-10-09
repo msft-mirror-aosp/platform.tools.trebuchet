@@ -18,6 +18,7 @@ package trebuchet.model.fragments
 
 import trebuchet.model.InvalidId
 import trebuchet.model.SchedSlice
+import trebuchet.model.base.Slice
 import trebuchet.model.base.SliceGroup
 
 class ThreadModelFragment(var id: Int, var process: ProcessModelFragment, var name: String? = null) {

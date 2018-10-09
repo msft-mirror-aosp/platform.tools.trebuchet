@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2018 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,20 @@
  * limitations under the License.
  */
 
-package trebuchet.model
+apply plugin: 'java'
+apply plugin: 'application'
+apply plugin: 'kotlin-platform-jvm'
 
-import trebuchet.model.fragments.CounterFragment
+sourceCompatibility = 1.8
+mainClassName = "StartupSummarizerKt"
 
-data class CounterValue(val timestamp: Double, val count: Long)
-
-class Counter(val name: String, val events: List<CounterValue>) {
-    constructor(fragment: CounterFragment) : this(fragment.name, fragment.events) {
-        events.sortedBy { it.timestamp }
-    }
+sourceSets {
+    main.kotlin.srcDirs += 'src'
 }
 
-infix fun Double.hasCount(value: Long): CounterValue = CounterValue(this, value)
+dependencies {
+    compile project(":core:common")
+    compile project(":core:model")
+    compile project(":trebuchet:startup-common")
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+}
