@@ -29,10 +29,8 @@ class ImportTask(private val importFeedback: ImportFeedback) {
     private val fragments = mutableListOf<ModelFragment>()
 
     fun import(source: BufferProducer): Model {
-        var model: Model? = null
         extractOrImport(source)
-        model = finish()
-        return model!!
+        return finish()
     }
 
     private fun extractOrImport(stream: BufferProducer) {
