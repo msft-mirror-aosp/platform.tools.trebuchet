@@ -86,6 +86,19 @@ java_binary_host {
 }
 
 java_binary_host {
+    name: "StartupSummarizerKt",
+    defaults: ["trebuchet-defaults"],
+    manifest: "trebuchet/startup-summarizer/MANIFEST.mf",
+    srcs: [
+        "trebuchet/startup-summarizer/src/**/*.kt",
+    ],
+    static_libs: [
+        "trebuchet-core",
+        "trebuchet-startup-common"
+    ],
+}
+
+java_binary_host {
     name: "traceutils",
     defaults: ["trebuchet-defaults"],
     manifest: "trebuchet/traceutils/MANIFEST.mf",
