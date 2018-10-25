@@ -21,6 +21,8 @@ import trebuchet.model.ProcessModel
 import trebuchet.model.ThreadModel
 import trebuchet.model.base.Slice
 import trebuchet.model.base.SliceGroup
+import kotlin.coroutines.experimental.SequenceBuilder
+import kotlin.coroutines.experimental.buildSequence
 
 enum class TraverseAction {
     /**
@@ -118,5 +120,26 @@ object SliceQueries {
             if (any(it.children, cb)) return true
         }
         return false
+    }
+}
+
+private suspend fun SequenceBuilder<Slice>.yieldSlices(slices: List<SliceGroup>) {
+    slices.forEach {
+        yield(it)
+        yieldSlices(it.children)
+    }
+}
+
+fun Model.slices(includeAsync: Boolean = true): Sequence<Slice> {
+    val model = this
+    return buildSequence {
+        model.processes.values.forEach { process ->
+            if (includeAsync) {
+                yieldAll(process.asyncSlices)
+            }
+            process.threads.forEach { thread ->
+                yieldSlices(thread.slices)
+            }
+        }
     }
 }
