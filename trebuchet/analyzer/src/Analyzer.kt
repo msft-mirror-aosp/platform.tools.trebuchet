@@ -18,12 +18,12 @@ import trebuchet.extras.openSample
 import trebuchet.model.Model
 import trebuchet.queries.SliceQueries
 import trebuchet.queries.ThreadQueries
+import trebuchet.queries.slices
 import trebuchet.util.par_map
 
 fun timeMergeShot(model: Model) {
     println("Clock sync parent=${model.parentTimestamp}, realtime=${model.realtimeTimestamp}")
-    val slices = SliceQueries.selectAll(model) { it.name.startsWith("MergeShot")}
-    if (slices.isEmpty()) return
+    val slices = model.slices().filter { it.name.startsWith("MergeShot") }
     slices.forEach { println("${it.name} took ${it.duration}") }
     val totalDuration = slices.map { it.duration }.reduce { a, b -> a+b }
     println("Total Duration: $totalDuration")
