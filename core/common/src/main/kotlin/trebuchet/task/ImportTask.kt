@@ -28,6 +28,8 @@ import kotlin.system.measureTimeMillis
 class ImportTask(private val importFeedback: ImportFeedback) {
     private val fragments = mutableListOf<ModelFragment>()
 
+    // TODO: Java doesn't like this since it collides with the
+    @JvmName("importTrace")
     fun import(source: BufferProducer): Model {
         extractOrImport(source)
         return finish()
