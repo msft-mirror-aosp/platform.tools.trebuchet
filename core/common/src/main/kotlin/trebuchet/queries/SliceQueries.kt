@@ -64,6 +64,16 @@ object SliceQueries {
         return ret
     }
 
+    fun selectAll(process : ProcessModel, cb : (Slice) -> Boolean) : List<Slice> {
+        val ret = mutableListOf<Slice>()
+        iterSlices(process) {
+            if (cb(it)) {
+                ret.add(it)
+            }
+        }
+        return ret
+    }
+
     fun selectAll(thread: ThreadModel, cb: (Slice) -> Boolean): List<Slice> {
         val ret = mutableListOf<Slice>()
         iterSlices(thread) {
@@ -74,11 +84,52 @@ object SliceQueries {
         return ret
     }
 
+    fun selectFirst(model: Model, cb: (Slice) -> Boolean) : Slice? {
+        return model.processes.values.mapNotNull { selectFirst(it, cb) }.minBy { it.startTime }
+    }
+
+    fun selectFirst(process: ProcessModel, cb: (Slice) -> Boolean) : Slice? {
+        var ret : Slice? = null
+
+        process.asyncSlices.forEach {
+            if (cb(it)) {
+                ret = it
+                return@forEach
+            }
+        }
+
+        process.threads.forEach { thread ->
+            val threadSlice = selectFirst(thread, cb)
+
+            if (threadSlice != null && (ret == null || threadSlice.startTime < ret!!.startTime)) {
+                ret = threadSlice
+            }
+        }
+
+        return ret
+    }
+
+    fun selectFirst(thread : ThreadModel, cb : (Slice) -> Boolean) : Slice? {
+        var ret : Slice? = null
+        iterSlices(thread) {
+            if (cb(it)) {
+                ret = it
+                return@iterSlices
+            }
+        }
+        return ret
+    }
+
     fun traverseSlices(model: Model, cb: SliceTraverser) {
         model.processes.values.forEach { traverseSlices(it, cb) }
     }
 
     fun traverseSlices(process: ProcessModel, cb: SliceTraverser) {
+        process.asyncSlices.forEach {
+            cb.beginSlice(it)
+            cb.endSlice(it)
+        }
+
         process.threads.forEach { traverseSlices(it, cb) }
     }
 
@@ -100,6 +151,7 @@ object SliceQueries {
     }
 
     fun iterSlices(process: ProcessModel, cb: (Slice) -> Unit) {
+        process.asyncSlices.forEach { cb(it) }
         process.threads.forEach { iterSlices(it, cb) }
     }
 
