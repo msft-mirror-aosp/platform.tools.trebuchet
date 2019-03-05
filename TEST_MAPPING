@@ -1,7 +1,13 @@
 {
   "presubmit": [
     {
-      "name": "trebuchet-core-tests"
+      "name": "trebuchet-core-tests",
+      "host": true,
+      "options": [
+        {
+          "exclude-annotation": "trebuchet.testutils.NeedsSampleData"
+        }
+      ]
     }
   ]
 }

@@ -58,6 +58,7 @@ java_test_host {
         "junit",
         "kotlin-reflect",
     ],
+    test_suites: ["general-tests"],
 }
 
 java_binary_host {
