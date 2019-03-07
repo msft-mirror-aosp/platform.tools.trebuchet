@@ -22,6 +22,7 @@ import trebuchet.extras.findSampleData
 import trebuchet.importers.FatalImportFeedback
 import trebuchet.io.BufferProducer
 import trebuchet.io.StreamingReader
+import trebuchet.testutils.NeedsSampleData
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,28 +30,28 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ZlibExtractorTest {
-    @Test
+    @Test @NeedsSampleData
     fun testFactorySuccess() {
         val reader = StreamingReader(openSample())
         reader.loadIndex(reader.keepLoadedSize.toLong())
         assertNotNull(ZlibExtractor.Factory.extractorFor(reader, FatalImportFeedback))
     }
 
-    @Test
+    @Test @NeedsSampleData
     fun testFactoryNotDeflated() {
         val reader = StreamingReader(openSample("sample.ftrace"))
         reader.loadIndex(reader.keepLoadedSize.toLong())
         assertNull(ZlibExtractor.Factory.extractorFor(reader, FatalImportFeedback))
     }
 
-    @Test
+    @Test @NeedsSampleData
     fun testFactoryNoHeader() {
         val reader = StreamingReader(openSample("caltrace1.html"))
         reader.loadIndex(reader.keepLoadedSize.toLong())
         assertNull(ZlibExtractor.Factory.extractorFor(reader, FatalImportFeedback))
     }
 
-    @Test
+    @Test @NeedsSampleData
     fun testExtractInitial() {
         val expected = "# tracer: nop\n#\n# ent"
         val extractor = ZlibExtractor(FatalImportFeedback)
