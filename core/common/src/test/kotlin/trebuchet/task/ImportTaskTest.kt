@@ -26,10 +26,12 @@ import trebuchet.io.asSlice
 import trebuchet.model.Model
 import trebuchet.model.fragments.AsyncSlice
 import trebuchet.queries.SliceQueries
+import trebuchet.testutils.NeedsSampleData
 import java.io.File
 
 class ImportTaskTest {
-    @Test fun testImportCameraTrace() {
+    @Test @NeedsSampleData
+    fun testImportCameraTrace() {
         val model = import("hdr-0608-4-trace.html")
         val slices = SliceQueries.selectAll(model) { it.name.startsWith("MergeShot")}
         assertEquals(2, slices.size)
@@ -37,7 +39,8 @@ class ImportTaskTest {
         assertEquals(0.866, slices[1].duration, .001)
     }
 
-    @Test fun testImportCalTrace1() {
+    @Test @NeedsSampleData
+    fun testImportCalTrace1() {
         val model = import("caltrace1.html")
         val counterName = "com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#1"
         val process = model.processes.values.find { it.name == "surfaceflinger" }!!
@@ -54,7 +57,8 @@ class ImportTaskTest {
         assertFalse(counter.events.any { it.count < 0 || it.count > 2})
     }
 
-    @Test fun testImportSample() {
+    @Test @NeedsSampleData
+    fun testImportSample() {
         val model = import("sample.ftrace")
         val process = model.processes[6381]!!
         val thread = process.threads.find { it.name == "RenderThread" }!!
