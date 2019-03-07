@@ -8,6 +8,10 @@
           "exclude-annotation": "trebuchet.testutils.NeedsSampleData"
         }
       ]
+    },
+    {
+      "name": "trebuchet-startup-common-tests",
+      "host": true
     }
   ]
 }
