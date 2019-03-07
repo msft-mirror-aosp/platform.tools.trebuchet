@@ -210,7 +210,7 @@ fun Model.getStartupEvents() : List<StartupEvent> {
             val newProc        = this.findProcess(newProcName, systemServerSlice.startTime, systemServerSlice.endTime)
             val startProcSlice = systemServerProc.findFirstSlice(SLICE_NAME_PROC_START, newProcName, systemServerSlice.startTime, systemServerSlice.endTime)
             val rfdSlice       = systemServerProc.findFirstSliceOrNull(SLICE_NAME_REPORT_FULLY_DRAWN, newProcName, systemServerSlice.startTime)
-            val firstSliceTime = newProc.threads.map { it.slices.first().startTime }.min()!!
+            val firstSliceTime = newProc.threads.map { it.slices.firstOrNull()?.startTime ?: Double.POSITIVE_INFINITY }.min()!!
 
             val schedSliceInfo : MutableMap<SchedulingState, Double> = mutableMapOf()
             newProc.threads.first().schedSlices.forEach schedLoop@ { schedSlice ->
