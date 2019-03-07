@@ -61,6 +61,22 @@ java_test_host {
     test_suites: ["general-tests"],
 }
 
+java_test_host {
+    name: "trebuchet-startup-common-tests",
+    defaults: ["trebuchet-defaults"],
+    srcs: [
+        "trebuchet/startup-common/test/**/*.kt",
+    ],
+    static_libs: [
+        "trebuchet-core",
+        "trebuchet-startup-common",
+    ],
+    libs: [
+        "junit",
+    ],
+    test_suites: ["general-tests"],
+}
+
 java_binary_host {
     name: "AnalyzerKt",
     defaults: ["trebuchet-defaults"],
