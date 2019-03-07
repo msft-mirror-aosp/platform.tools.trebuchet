@@ -52,7 +52,7 @@ class WorkQueue {
 
     fun processAll() {
         while (!finished) {
-            var next: Runnable? = null
+            var next: Runnable?
             do {
                 synchronized(workArray) {
                     next = workArray.poll()
@@ -68,7 +68,7 @@ class WorkQueue {
             spinLoop(60000)
         }
 
-        var remaining: Runnable? = null
+        var remaining: Runnable?
         do {
             synchronized(workArray) {
                 remaining = workArray.poll()
@@ -106,35 +106,18 @@ fun<T, U, S> par_map(iterator: Iterator<T>, threadState: () -> S, chunkSize: Int
     val resultPipe = ArrayBlockingQueue<Future<List<U>>>(1024, false)
     thread {
         val threadLocal = ThreadLocal.withInitial { threadState() }
-        if (true) {
-            WorkPool().use { pool ->
-                while (iterator.hasNext()) {
-                    val source = ArrayList<T>(chunkSize)
-                    while (source.size < chunkSize && iterator.hasNext()) {
-                        source.add(iterator.next())
-                    }
-                    val future = CompletableFuture<List<U>>()
-                    pool.submit(Runnable {
-                        val state = threadLocal.get()
-                        future.complete(source.map { map(state, it) })
-                    })
-                    resultPipe.put(future)
-                }
-                resultPipe.put(endOfStreamMarker)
-            }
-        } else {
-            val pool = Executors.newFixedThreadPool(ThreadCount) {
-                Thread(it).apply { isDaemon = true }
-            }
+        WorkPool().use { pool ->
             while (iterator.hasNext()) {
                 val source = ArrayList<T>(chunkSize)
                 while (source.size < chunkSize && iterator.hasNext()) {
                     source.add(iterator.next())
                 }
-                resultPipe.put(pool.submit( Callable {
+                val future = CompletableFuture<List<U>>()
+                pool.submit(Runnable {
                     val state = threadLocal.get()
-                    source.map { map(state, it) }
-                }))
+                    future.complete(source.map { map(state, it) })
+                })
+                resultPipe.put(future)
             }
             resultPipe.put(endOfStreamMarker)
         }

@@ -16,8 +16,7 @@
 
 package trebuchet.io
 
-import javax.xml.crypto.Data
-import kotlin.coroutines.experimental.buildIterator
+import kotlin.sequences.iterator
 
 class StreamingReader(val source: BufferProducer, val keepLoadedSize: Int = 8096) : GenericByteBuffer {
     val windows = mutableListOf<Window>()
@@ -57,7 +56,7 @@ class StreamingReader(val source: BufferProducer, val keepLoadedSize: Int = 8096
     }
 
     fun iter(startIndex: Long = 0L): Iterator<DataSlice> {
-        return buildIterator {
+        return iterator {
             for (win in windows) {
                 if (startIndex <= win.globalStartIndex) {
                     yield(win.slice)
@@ -65,14 +64,20 @@ class StreamingReader(val source: BufferProducer, val keepLoadedSize: Int = 8096
                     yield(win.slice.slice((startIndex - win.globalStartIndex).toInt()))
                 }
             }
+
             while (!reachedEof) {
                 val nextBuffer = source.next()
-                if (nextBuffer == null) {
+                if (nextBuffer != null) {
+                    addBuffer(nextBuffer)
+
+                    // This variable is a workaround for an apparent bug in the Kotlin
+                    // type system that causes it to handle type inference around yield
+                    // statements incorrectly.
+                    val notNullNextBuffer : DataSlice = nextBuffer
+                    yield(notNullNextBuffer)
+                } else {
                     reachedEof = true
-                    break
                 }
-                addBuffer(nextBuffer)
-                yield(nextBuffer!!)
             }
         }
     }
