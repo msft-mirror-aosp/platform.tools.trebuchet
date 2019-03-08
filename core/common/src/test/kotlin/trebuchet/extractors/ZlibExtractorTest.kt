@@ -58,7 +58,7 @@ class ZlibExtractorTest {
         extractor.extract(StreamingReader(openSample())) {
             val first = it.next()
             assertNotNull(first)
-            assertTrue(first!!.length > expected.length)
+            assertTrue(first.length > expected.length)
             assertEquals(expected, first.slice(0, expected.length).toString())
             it.close()
         }

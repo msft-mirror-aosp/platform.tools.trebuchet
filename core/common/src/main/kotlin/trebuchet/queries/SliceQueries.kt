@@ -16,13 +16,14 @@
 
 package trebuchet.queries
 
+import kotlin.sequences.Sequence
+import kotlin.sequences.SequenceScope
+
 import trebuchet.model.Model
 import trebuchet.model.ProcessModel
 import trebuchet.model.ThreadModel
 import trebuchet.model.base.Slice
 import trebuchet.model.base.SliceGroup
-import kotlin.coroutines.experimental.SequenceBuilder
-import kotlin.coroutines.experimental.buildSequence
 
 enum class TraverseAction {
     /**
@@ -175,7 +176,7 @@ object SliceQueries {
     }
 }
 
-private suspend fun SequenceBuilder<Slice>.yieldSlices(slices: List<SliceGroup>) {
+private suspend fun SequenceScope<Slice>.yieldSlices(slices: List<SliceGroup>) {
     slices.forEach {
         yield(it)
         yieldSlices(it.children)
@@ -184,7 +185,7 @@ private suspend fun SequenceBuilder<Slice>.yieldSlices(slices: List<SliceGroup>)
 
 fun Model.slices(includeAsync: Boolean = true): Sequence<Slice> {
     val model = this
-    return buildSequence {
+    return sequence {
         model.processes.values.forEach { process ->
             if (includeAsync) {
                 yieldAll(process.asyncSlices)
