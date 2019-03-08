@@ -29,9 +29,9 @@ import trebuchet.model.Model
 import trebuchet.model.ProcessModel
 import trebuchet.model.SchedulingState
 import trebuchet.model.base.Slice
-import trebuchet.queries.SliceQueries
-import trebuchet.queries.SliceTraverser
-import trebuchet.queries.TraverseAction
+import trebuchet.queries.slices.*
+import trebuchet.util.slices.*
+import trebuchet.util.time.*
 
 /*
  * Constants
@@ -43,52 +43,10 @@ const val DEFAULT_START_DURATION = 5000
 
 const val PROC_NAME_SYSTEM_SERVER = "system_server"
 
-const val SLICE_NAME_ACTIVITY_DESTROY = "activityDestroy"
-const val SLICE_NAME_ACTIVITY_PAUSE = "activityPause"
-const val SLICE_NAME_ACTIVITY_RESUME = "activityResume"
-const val SLICE_NAME_ACTIVITY_START = "activityStart"
-const val SLICE_NAME_ACTIVITY_THREAD_MAIN = "ActivityThreadMain"
-const val SLICE_NAME_APP_IMAGE_INTERN_STRING = "AppImage:InternString"
-const val SLICE_NAME_APP_IMAGE_LOADING = "AppImage:Loading"
-const val SLICE_NAME_APP_LAUNCH = "launching"
-const val SLICE_NAME_ALTERNATE_DEX_OPEN_START = "Dex file open"
-const val SLICE_NAME_BIND_APPLICATION = "bindApplication"
-const val SLICE_NAME_DRAWING = "drawing"
-const val SLICE_NAME_INFLATE = "inflate"
-const val SLICE_NAME_OPEN_DEX_FILE_FUNCTION = "std::unique_ptr<const DexFile> art::OatDexFile::OpenDexFile(std::string *) const"
-const val SLICE_NAME_OBFUSCATED_TRACE_START = "X."
-const val SLICE_NAME_POST_FORK = "PostFork"
-const val SLICE_NAME_PROC_START = "Start proc"
-const val SLICE_NAME_REPORT_FULLY_DRAWN = "ActivityManager:ReportingFullyDrawn"
-const val SLICE_NAME_ZYGOTE_INIT = "ZygoteInit"
-
-val SLICE_MAPPERS = arrayOf(
-    Regex("^(Collision check)"),
-    Regex("^(launching):\\s+([\\w\\.])+"),
-    Regex("^(Lock contention).*"),
-    Regex("^(monitor contention).*"),
-    Regex("^(NetworkSecurityConfigProvider.install)"),
-    Regex("^(notifyContentCapture\\((?:true|false)\\))\\sfor\\s(.*)"),
-    Regex("^(Open dex file)(?: from RAM)? ([\\w\\./]*)"),
-    Regex("^(Open oat file)\\s+(.*)"),
-    Regex("^(RegisterDexFile)\\s+(.*)"),
-    Regex("^($SLICE_NAME_REPORT_FULLY_DRAWN)\\s+(.*)"),
-    Regex("^(serviceCreate):.*className=([\\w\\.]+)"),
-    Regex("^(serviceStart):.*cmp=([\\w\\./]+)"),
-    Regex("^(Setup proxies)"),
-    Regex("^($SLICE_NAME_PROC_START):\\s+(.*)"),
-    Regex("^(SuspendThreadByThreadId) suspended (.+)$"),
-    Regex("^(VerifyClass)(.*)"),
-
-    // Default pattern for slices with a single-word name.
-    Regex("^([\\w:]+)$")
-)
-
 /*
  * Class Definition
  */
 
-data class SliceContents(val name: String, val value: String?)
 data class StartupEvent(val proc : ProcessModel,
                         val name : String,
                         val startTime : Double,
@@ -127,35 +85,9 @@ class MissingProcessException : Exception {
     }
 }
 
-class MissingSliceException : Exception {
-    constructor(pid : Int, type : String, value : String?) {
-        Exception("Unable to find slice. PID = $pid, Type = $type" +
-                  (if (value == null) "" else ", Value = $value"))
-    }
-
-    constructor(pid : Int, type : String, value : String?, lowerBound : Double, upperBound : Double) {
-        Exception("Unable to find slice. PID = $pid, Type = $type" +
-                  (if (value == null) "" else ", Value = $value") +
-                  " (Bounds: [${lowerBound.secondValueToMillisecondString()}," +
-                  " ${upperBound.secondValueToMillisecondString()}])")
-    }
-
-    constructor (pid : Int, pattern : Regex) {
-        Exception("Unable to find slice.  PID = $pid, Pattern = $pattern")
-    }
-
-    constructor (pid : Int, pattern : Regex, lowerBound : Double, upperBound : Double) {
-        Exception("Unable to find slice.  PID = $pid, Pattern = $pattern" +
-                  " (Bounds: [${lowerBound.secondValueToMillisecondString()}," +
-                  " ${upperBound.secondValueToMillisecondString()}])")
-    }
-}
-
 /*
  * Class Extensions
  */
-
-fun Double.secondValueToMillisecondString() = "%.3f ms".format(this * 1000.0)
 
 fun ProcessModel.fuzzyNameMatch(queryName : String) : Boolean {
     if (queryName.endsWith(this.name)) {
@@ -233,7 +165,7 @@ fun Model.getStartupEvents() : List<StartupEvent> {
             val undifferentiatedSliceInfo : MutableAggregateSliceInfoMap = mutableMapOf()
             val nonNestedSliceInfo : MutableAggregateSliceInfoMap = mutableMapOf()
 
-            SliceQueries.traverseSlices(newProc.threads.first(), object : SliceTraverser {
+            newProc.threads.first().traverseSlices(object : SliceTraverser {
                 // Our depth down an individual tree in the slice forest.
                 var treeDepth = -1
                 val sliceDepths: MutableMap<String, Int> = mutableMapOf()
@@ -300,19 +232,20 @@ fun Model.getStartupEvents() : List<StartupEvent> {
                 }
             })
 
-            startupEvents.add(StartupEvent(newProc,
-                                           newProcName,
-                                           systemServerSlice.startTime,
-                                           systemServerSlice.endTime,
-                                           startProcSlice.duration,
-                                           rfdSlice?.startTime,
-                                           firstSliceTime,
-                                           undifferentiatedTime,
-                                           schedSliceInfo,
-                                           allSlicesInfo,
-                                           topLevelSliceInfo,
-                                           undifferentiatedSliceInfo,
-                                           nonNestedSliceInfo))
+            startupEvents.add(
+                StartupEvent(newProc,
+                             newProcName,
+                             systemServerSlice.startTime,
+                             systemServerSlice.endTime,
+                             startProcSlice.duration,
+                             rfdSlice?.startTime,
+                             firstSliceTime,
+                             undifferentiatedTime,
+                             schedSliceInfo,
+                             allSlicesInfo,
+                             topLevelSliceInfo,
+                             undifferentiatedSliceInfo,
+                             nonNestedSliceInfo))
         }
     }
 
@@ -324,133 +257,7 @@ fun aggregateSliceInfo(infoMap : MutableAggregateSliceInfoMap, sliceContents : S
     ++aggInfo.count
     aggInfo.totalTime += duration
     if (sliceContents.value != null) {
-        val (uniqueValueCount, uniqueValueDuration) = aggInfo.values.getOrDefault(sliceContents.value, Pair(0, 0.0))
-        aggInfo.values[sliceContents.value] = Pair(uniqueValueCount + 1, uniqueValueDuration + duration)
+        val (uniqueValueCount, uniqueValueDuration) = aggInfo.values.getOrDefault(sliceContents.value as String, Pair(0, 0.0))
+        aggInfo.values[sliceContents.value as String] = Pair(uniqueValueCount + 1, uniqueValueDuration + duration)
     }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findFirstSlice(queryType : String,
-                                queryValue : String?,
-                                lowerBound : Double = this.model.beginTimestamp,
-                                upperBound : Double = this.model.endTimestamp) : Slice {
-
-    val foundSlice = this.findFirstSliceOrNull(queryType, queryValue, lowerBound, upperBound)
-
-    if (foundSlice != null) {
-        return foundSlice
-    } else if (lowerBound == this.model.beginTimestamp && upperBound == this.model.endTimestamp) {
-        throw MissingSliceException(this.id, queryType, queryValue)
-    } else {
-        throw MissingSliceException(this.id, queryType, queryValue, lowerBound, upperBound)
-    }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findFirstSlice(pattern : Regex,
-                                lowerBound : Double = this.model.beginTimestamp,
-                                upperBound : Double = this.model.endTimestamp) : Slice {
-
-    val foundSlice = this.findFirstSliceOrNull(pattern, lowerBound, upperBound)
-
-    if (foundSlice != null) {
-        return foundSlice
-    } else if (lowerBound == this.model.beginTimestamp && upperBound == this.model.endTimestamp) {
-        throw MissingSliceException(this.id, pattern)
-    } else {
-        throw MissingSliceException(this.id, pattern, lowerBound, upperBound)
-    }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findFirstSliceOrNull(queryType : String,
-                                queryValue : String?,
-                                lowerBound : Double = this.model.beginTimestamp,
-                                upperBound : Double = this.model.endTimestamp) : Slice? {
-
-    return SliceQueries.selectFirst(this) { slice ->
-        val sliceInfo = parseSliceName(slice.name)
-
-        sliceInfo.name == queryType &&
-            (queryValue == null || sliceInfo.value == queryValue) &&
-        lowerBound <= slice.startTime &&
-        slice.startTime <= upperBound
-    }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findFirstSliceOrNull(pattern : Regex,
-                                lowerBound : Double = this.model.beginTimestamp,
-                                upperBound : Double = this.model.endTimestamp) : Slice? {
-
-    return SliceQueries.selectFirst(this) { slice ->
-        pattern.find(slice.name) != null &&
-            lowerBound <= slice.startTime &&
-            slice.startTime <= upperBound
-    }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findAllSlices(queryType : String,
-                               queryValue : String?,
-                               lowerBound : Double = this.model.beginTimestamp,
-                               upperBound : Double = this.model.endTimestamp) : List<Slice> {
-
-    return SliceQueries.selectAll(this) { slice ->
-        val sliceInfo = parseSliceName(slice.name)
-
-        sliceInfo.name == queryType &&
-                (queryValue == null || sliceInfo.value == queryValue) &&
-        lowerBound <= slice.startTime &&
-        slice.startTime <= upperBound
-    }
-}
-
-// TODO: Move into SliceQueries
-fun ProcessModel.findAllSlices(pattern : Regex,
-                               lowerBound : Double = this.model.beginTimestamp,
-                               upperBound : Double = this.model.endTimestamp) : List<Slice> {
-
-    return SliceQueries.selectAll(this) { slice ->
-        pattern.find(slice.name) != null &&
-            lowerBound <= slice.startTime &&
-            slice.startTime <= upperBound
-    }
-}
-
-/*
- * Functions
- */
-
-fun parseSliceName(sliceString: String): SliceContents {
-    when {
-    // Handle special cases.
-        sliceString == SLICE_NAME_OPEN_DEX_FILE_FUNCTION -> return SliceContents("Open dex file function invocation", null)
-        sliceString.startsWith(SLICE_NAME_ALTERNATE_DEX_OPEN_START) -> return SliceContents("Open dex file", sliceString.split(" ").last().trim())
-        sliceString.startsWith(SLICE_NAME_OBFUSCATED_TRACE_START) -> return SliceContents("Obfuscated trace point", null)
-        sliceString[0] == '/' -> return SliceContents("Load Dex files from classpath", null)
-
-        else -> {
-            // Search the slice mapping patterns.
-            for (pattern in SLICE_MAPPERS) {
-                val matchResult = pattern.find(sliceString)
-
-                if (matchResult != null) {
-                    val sliceType = matchResult.groups[1]!!.value.trim()
-
-                    val sliceDetails =
-                        if (matchResult.groups.size > 2 && !matchResult.groups[2]!!.value.isEmpty()) {
-                            matchResult.groups[2]!!.value.trim()
-                        } else {
-                            null
-                        }
-
-                    return SliceContents(sliceType, sliceDetails)
-                }
-            }
-
-            return SliceContents("Unknown Slice", sliceString)
-        }
-    }
-
 }

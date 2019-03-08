@@ -16,9 +16,8 @@
 
 import trebuchet.extras.openSample
 import trebuchet.model.Model
-import trebuchet.queries.SliceQueries
+import trebuchet.queries.slices.*
 import trebuchet.queries.ThreadQueries
-import trebuchet.queries.slices
 import trebuchet.util.par_map
 
 fun timeMergeShot(model: Model) {
@@ -49,7 +48,7 @@ fun measureStartup(model: Model) {
 }
 
 fun measureRotator(model: Model) {
-    val latchBuffers = SliceQueries.selectAll(model) {
+    val latchBuffers = model.selectAll {
         it.name == "latchBuffer"
     }
     var largestDuration = 0.0
@@ -57,7 +56,7 @@ fun measureRotator(model: Model) {
     var retireStart = 0.0
     latchBuffers.forEachIndexed { index,  slice ->
         val cutoff = if (index < latchBuffers.size - 1) latchBuffers[index + 1].startTime else Double.MAX_VALUE
-        val retire = SliceQueries.selectAll(model) {
+        val retire = model.selectAll {
             it.name == "sde_rotator_retire_handler"
                     && it.startTime > slice.endTime
                     && it.endTime < cutoff
