@@ -26,11 +26,15 @@
  */
 
 import java.io.File
-import trebuchet.extras.parseTrace
-import trebuchet.model.SchedulingState
+
 import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.system.exitProcess
+
+import trebuchet.extras.parseTrace
+import trebuchet.model.SchedulingState
+import trebuchet.util.slices.*
+import trebuchet.util.time.*
 
 /*
  * Constants
@@ -147,38 +151,46 @@ fun parseFileName(fileName : String) : Triple<String, CompilerFilter, Temperatur
     }
 }
 
-fun printAppRecord(record : ApplicationRecord) {
+fun printPlainText(records : MutableMap<String, ApplicationRecord>) {
+    records.forEach { appName, record ->
+        if (record.numSamples() > SAMPLE_THRESHOLD_APPLICATION) {
+            println("$appName:")
+            printAppRecordPlainText(record)
+            println()
+        }
+    }
+}
 
+fun printAppRecordPlainText(record : ApplicationRecord) {
     if (record.quicken.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tQuicken:")
-        printCompilerRecord(record.quicken)
+        printCompilerRecordPlainText(record.quicken)
     }
 
     if (record.speed.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tSpeed:")
-        printCompilerRecord(record.speed)
+        printCompilerRecordPlainText(record.speed)
     }
 
     if (record.speedProfile.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tSpeed Profile:")
-        printCompilerRecord(record.speedProfile)
+        printCompilerRecordPlainText(record.speedProfile)
     }
 }
 
-fun printCompilerRecord(record : CompilerRecord) {
-
+fun printCompilerRecordPlainText(record : CompilerRecord) {
     if (record.cold.size > SAMPLE_THRESHOLD_TEMPERATURE) {
         println("\t\tCold:")
-        printSampleSet(record.cold)
+        printSampleSetPlainText(record.cold)
     }
 
     if (record.warm.size > SAMPLE_THRESHOLD_TEMPERATURE) {
         println("\t\tWarm:")
-        printSampleSet(record.warm)
+        printSampleSetPlainText(record.warm)
     }
 }
 
-fun printSampleSet(records : List<StartupEvent>) {
+fun printSampleSetPlainText(records : List<StartupEvent>) {
 
     val (startupTimeAverage, startupTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.endTime - it.startTime})
     val (timeToFirstSliceAverage, timeToFirstSliceStandardDeviation) = averageAndStandardDeviation(records.map {it.firstSliceTime - it.startTime})
@@ -253,13 +265,55 @@ fun printSampleSet(records : List<StartupEvent>) {
     println()
 }
 
-fun printPlainText(records : MutableMap<String, ApplicationRecord>) {
+fun printCSV(records : MutableMap<String, ApplicationRecord>) {
+    println("Application Name, Compiler Filter, Temperature, Startup Time Avg (ms), Startup Time SD (ms), Time-to-first-slice Avg (ms), Time-to-first-slice SD (ms), Report Fully Drawn Avg (ms), Report Fully Drawn SD (ms)")
+
     records.forEach { appName, record ->
         if (record.numSamples() > SAMPLE_THRESHOLD_APPLICATION) {
-            println("$appName:")
-            printAppRecord(record)
-            println()
+            printAppRecordCSV(appName, record)
         }
+    }
+}
+
+fun printAppRecordCSV(appName : String, record : ApplicationRecord) {
+    if (record.quicken.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "quicken", record.quicken)
+    }
+
+    if (record.speed.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "speed", record.speed)
+    }
+
+    if (record.speedProfile.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "speed-profile", record.speedProfile)
+    }
+}
+
+fun printCompilerRecordCSV(appName : String, compilerFilter : String, record : CompilerRecord) {
+    if (record.cold.size > SAMPLE_THRESHOLD_TEMPERATURE) {
+        printSampleSetCSV(appName, compilerFilter, "cold", record.cold)
+    }
+
+    if (record.warm.size > SAMPLE_THRESHOLD_TEMPERATURE) {
+        printSampleSetCSV(appName, compilerFilter, "warm", record.warm)
+    }
+}
+
+fun printSampleSetCSV(appName : String, compilerFilter : String, temperature : String, records : List<StartupEvent>) {
+    print("$appName, $compilerFilter, $temperature, ")
+
+    val (startupTimeAverage, startupTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.endTime - it.startTime})
+    print("%.3f, %.3f, ".format(startupTimeAverage * 1000, startupTimeStandardDeviation * 1000))
+
+    val (timeToFirstSliceAverage, timeToFirstSliceStandardDeviation) = averageAndStandardDeviation(records.map {it.firstSliceTime - it.startTime})
+    print("%.3f, %.3f,".format(timeToFirstSliceAverage * 1000, timeToFirstSliceStandardDeviation * 1000))
+
+    if (records.first().reportFullyDrawnTime != null) {
+        val (rfdTimeAverage, rfdTimeStandardDeviation) = averageAndStandardDeviation(records.map { it.reportFullyDrawnTime!! - it.startTime})
+        print(" %.3f, %.3f\n".format(rfdTimeAverage * 1000, rfdTimeStandardDeviation * 1000))
+
+    } else {
+        print(",\n")
     }
 }
 
@@ -304,7 +358,8 @@ fun main(args: Array<String>) {
 
     println()
 
-    printPlainText(records)
+//    printPlainText(records)
+    printCSV(records)
 
     if (exceptions.count() > 0) {
         println("Exceptions:")
