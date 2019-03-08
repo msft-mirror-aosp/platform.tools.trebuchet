@@ -19,11 +19,9 @@ package trebuchet.extractors
 import trebuchet.importers.ImportFeedback
 import trebuchet.io.*
 import trebuchet.util.indexOf
-import java.io.InputStream
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
-import java.util.zip.InflaterInputStream
-import kotlin.coroutines.experimental.buildIterator
+import kotlin.sequences.iterator
 
 private const val TRACE = "TRACE:"
 
@@ -48,7 +46,7 @@ private class DeflateProducer(stream: StreamingReader, val feedback: ImportFeedb
     private val inflater = Inflater()
     private var closed = false
 
-    private val sourceIterator = buildIterator {
+    private val sourceIterator = iterator {
         stream.loadIndex(stream.startIndex + 1024)
         val offset = findStart(stream)
         val buffIter = stream.iter(offset)
@@ -64,12 +62,12 @@ private class DeflateProducer(stream: StreamingReader, val feedback: ImportFeedb
                 if (inflater.needsDictionary()) {
                     feedback.reportImportException(IllegalStateException(
                             "inflater needs dictionary, which isn't supported"))
-                    return@buildIterator
+                    return@iterator
                 }
                 val compressFactor = len.toDouble() / (remaining - inflater.remaining)
                 avgCompressFactor = (avgCompressFactor * 9 + compressFactor) / 10
                 yield(array.asSlice(len))
-                if (closed) return@buildIterator
+                if (closed) return@iterator
             } while (!inflater.needsInput())
             inflater.end()
         }
