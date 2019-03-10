@@ -24,6 +24,7 @@ import trebuchet.importers.DummyImportFeedback
 import trebuchet.model.Model
 import trebuchet.task.ImportTask
 import trebuchet.testutils.makeReader
+import trebuchet.testutils.NeedsSampleData
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
@@ -38,7 +39,8 @@ class StringStreamTest {
         expect1_20_300("1\r\n20\r\n300")
     }
 
-    @Test fun testLineReaderOnFile() {
+    @Test @NeedsSampleData
+    fun testLineReaderOnFile() {
         val file = File("${findSampleData()}/sample.ftrace")
         Assert.assertTrue(file.exists())
         val expected = BufferedReader(FileReader(file))
