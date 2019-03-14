@@ -27,6 +27,7 @@
 import java.io.File
 import trebuchet.model.Model
 import trebuchet.extras.parseTrace
+import trebuchet.util.time.*
 
 /*
  * Constants
