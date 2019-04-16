@@ -16,7 +16,7 @@
 
 package trebuchet.io
 
-import kotlin.coroutines.experimental.buildIterator
+import kotlin.sequences.iterator
 
 private fun findNewlineInWindow(window: StreamingReader.Window, startIndex: Long): Long {
     for (i in startIndex..window.globalEndIndex) {
@@ -29,7 +29,7 @@ private fun findNewlineInWindow(window: StreamingReader.Window, startIndex: Long
  * Iterates over all the lines in the stream, skipping any empty line. Lines do not contain
  * the line-end marker(s). Handles both LF & CRLF endings.
  */
-fun StreamingReader.iterLines() = buildIterator {
+fun StreamingReader.iterLines() = iterator {
     val stream = this@iterLines
 
     var lineStartIndex = stream.startIndex
@@ -45,6 +45,7 @@ fun StreamingReader.iterLines() = buildIterator {
             if (foundAt != -1L) break
             index = window.globalEndIndex + 1
         }
+
         // Reached EOF with no data, return
         if (lineStartIndex > stream.endIndex) break
 
@@ -64,7 +65,7 @@ fun StreamingReader.iterLines() = buildIterator {
                 yield(window.slice.slice((lineStartIndex - window.globalStartIndex).toInt(),
                         (lineEndIndexInclusive - window.globalStartIndex + 1).toInt()))
             } else {
-                var tmpBuffer = ByteArray((lineEndIndexInclusive - lineStartIndex + 1).toInt())
+                val tmpBuffer = ByteArray((lineEndIndexInclusive - lineStartIndex + 1).toInt())
                 stream.copyTo(tmpBuffer, lineStartIndex, lineEndIndexInclusive)
                 yield(tmpBuffer.asSlice())
             }

@@ -26,12 +26,12 @@
  */
 
 import trebuchet.model.Model
-import trebuchet.model.ThreadModel
+import trebuchet.model.ProcessModel
+import trebuchet.model.SchedulingState
 import trebuchet.model.base.Slice
-import trebuchet.queries.SliceQueries
-import trebuchet.queries.SliceTraverser
-import trebuchet.queries.TraverseAction
-import java.lang.Double.min
+import trebuchet.queries.slices.*
+import trebuchet.util.slices.*
+import trebuchet.util.time.*
 
 /*
  * Constants
@@ -43,133 +43,221 @@ const val DEFAULT_START_DURATION = 5000
 
 const val PROC_NAME_SYSTEM_SERVER = "system_server"
 
-const val SLICE_NAME_ACTIVITY_DESTROY = "activityDestroy"
-const val SLICE_NAME_ACTIVITY_PAUSE = "activityPause"
-const val SLICE_NAME_ACTIVITY_RESUME = "activityResume"
-const val SLICE_NAME_ACTIVITY_START = "activityStart"
-const val SLICE_NAME_ACTIVITY_THREAD_MAIN = "ActivityThreadMain"
-const val SLICE_NAME_APP_IMAGE_INTERN_STRING = "AppImage:InternString"
-const val SLICE_NAME_APP_IMAGE_LOADING = "AppImage:Loading"
-const val SLICE_NAME_ALTERNATE_DEX_OPEN_START = "Dex file open"
-const val SLICE_NAME_BIND_APPLICATION = "bindApplication"
-const val SLICE_NAME_INFLATE = "inflate"
-const val SLICE_NAME_OPEN_DEX_FILE_FUNCTION = "std::unique_ptr<const DexFile> art::OatDexFile::OpenDexFile(std::string *) const"
-const val SLICE_NAME_OBFUSCATED_TRACE_START = "X."
-const val SLICE_NAME_POST_FORK = "PostFork"
-const val SLICE_NAME_PROC_START = "Start proc"
-const val SLICE_NAME_REPORT_FULLY_DRAWN = "reportFullyDrawn"
-const val SLICE_NAME_ZYGOTE_INIT = "ZygoteInit"
-
-val SLICE_MAPPERS = arrayOf(
-    Regex("^(Collision check)"),
-    Regex("^(Lock contention).*"),
-    Regex("^(monitor contention).*"),
-    Regex("^(NetworkSecurityConfigProvider.install)"),
-    Regex("^(Open dex file)(?: from RAM)? ([\\w\\./]*)"),
-    Regex("^(Open oat file)\\s+(.*)"),
-    Regex("^(RegisterDexFile)\\s+(.*)"),
-    Regex("^(serviceCreate):.*className=([\\w\\.]+)"),
-    Regex("^(serviceStart):.*cmp=([\\w\\./]+)"),
-    Regex("^(Setup proxies)"),
-    Regex("^(Start proc):\\s+(.*)"),
-    Regex("^(SuspendThreadByThreadId) suspended (.+)$"),
-    Regex("^(VerifyClass)(.*)"),
-
-    // Default pattern for slices with a single-word name.
-    Regex("^([\\w:]+)$")
-)
-
 /*
  * Class Definition
  */
 
-data class SliceInfo(val type: String, val payload: String?)
-data class StartupEndPoint(val timestamp: Double, val signal: String)
+data class StartupEvent(val proc : ProcessModel,
+                        val name : String,
+                        val startTime : Double,
+                        val endTime : Double,
+                        val serverSideForkTime : Double,
+                        val reportFullyDrawnTime : Double?,
+                        val firstSliceTime : Double,
+                        val undifferentiatedTime : Double,
+                        val schedTimings : Map<SchedulingState, Double>,
+                        val allSlicesInfo : AggregateSliceInfoMap,
+                        val topLevelSliceInfo : AggregateSliceInfoMap,
+                        val undifferentiatedSliceInfo : AggregateSliceInfoMap,
+                        val nonNestedSliceInfo : AggregateSliceInfoMap)
+
+class AggregateSliceInfo {
+    var count : Int = 0
+    var totalTime : Double = 0.0
+
+    val values : MutableMap<String, Pair<Int, Double>> = mutableMapOf()
+}
+
+typealias MutableAggregateSliceInfoMap = MutableMap<String, AggregateSliceInfo>
+typealias AggregateSliceInfoMap = Map<String, AggregateSliceInfo>
+
+class MissingProcessInfoException(pid : Int) : Exception("Missing process info for PID $pid")
+
+class MissingProcessException : Exception {
+    constructor(name : String) {
+        Exception("Unable to find process: $name")
+    }
+
+    constructor(name : String, lowerBound : Double, upperBound : Double) {
+        Exception("Unable to find process: $name" +
+                  " (Bounds: [${lowerBound.secondValueToMillisecondString()}," +
+                  " ${upperBound.secondValueToMillisecondString()}]")
+    }
+}
 
 /*
  * Class Extensions
  */
 
-fun Double.secondValueToMillisecondString() = "%.3f ms".format(this * 1000.0)
-
-fun Model.findIDsByName(query_name: String): Pair<Int, Int?>? {
-    for (process in this.processes.values) {
-        if (query_name.endsWith(process.name)) {
-            return Pair(process.id, null)
-
-        } else {
-            for (thread in process.threads) {
-                if (query_name.endsWith(thread.name)) {
-                    return Pair(process.id, thread.id)
-                }
+fun ProcessModel.fuzzyNameMatch(queryName : String) : Boolean {
+    if (queryName.endsWith(this.name)) {
+        return true
+    } else {
+        for (thread in this.threads) {
+            if (queryName.endsWith(thread.name)) {
+                return true
             }
         }
     }
 
-    return null
+    return false
 }
 
-// Find the time at which we've defined startup to have ended.
-fun Model.getStartupEndTime(mainThread: ThreadModel, startupStartTime: Double): StartupEndPoint {
-    var endTimeInfo: StartupEndPoint? = null
+fun Model.findProcess(queryName: String,
+                      lowerBound : Double = this.beginTimestamp,
+                      upperBound : Double = this.endTimestamp): ProcessModel {
 
-    SliceQueries.traverseSlices(mainThread, object : SliceTraverser {
-        override fun beginSlice(slice: Slice): TraverseAction {
-            if (endTimeInfo == null &&
-                (slice.name.startsWith(SLICE_NAME_ACTIVITY_DESTROY) ||
-                    slice.name.startsWith(SLICE_NAME_ACTIVITY_PAUSE) ||
-                    slice.name.startsWith(SLICE_NAME_ACTIVITY_RESUME))) {
+    for (process in this.processes.values) {
+        if (process.fuzzyNameMatch(queryName)) {
+            val firstSliceStart =
+                process.
+                    threads.
+                    map { it.slices }.
+                    filter { it.isNotEmpty() }.
+                    map { it.first().startTime }.
+                    min() ?: throw MissingProcessInfoException(process.id)
 
-                endTimeInfo = StartupEndPoint(slice.endTime, slice.name)
-
-                return TraverseAction.VISIT_CHILDREN
-            } else if (slice.name.startsWith(SLICE_NAME_REPORT_FULLY_DRAWN)) {
-                endTimeInfo = StartupEndPoint(slice.endTime, slice.name)
-
-                return TraverseAction.DONE
-            } else {
-                return TraverseAction.VISIT_CHILDREN
+            if (firstSliceStart in lowerBound..upperBound) {
+                return process
             }
         }
-    })
+    }
 
-    return endTimeInfo
-        ?: StartupEndPoint(min(startupStartTime + DEFAULT_START_DURATION, this.endTimestamp), "DefaultDuration")
+    if (lowerBound == this.beginTimestamp && upperBound == this.endTimestamp) {
+        throw MissingProcessException(queryName)
+    } else {
+        throw MissingProcessException(queryName, lowerBound, upperBound)
+    }
 }
 
-/*
- * Functions
- */
+fun Model.getStartupEvents() : List<StartupEvent> {
+    val systemServerProc = this.findProcess(PROC_NAME_SYSTEM_SERVER)
 
-fun parseSliceInfo(sliceString: String): SliceInfo {
-    when {
-    // Handle special cases.
-        sliceString == SLICE_NAME_OPEN_DEX_FILE_FUNCTION -> return SliceInfo("Open dex file function invocation", null)
-        sliceString.startsWith(SLICE_NAME_ALTERNATE_DEX_OPEN_START) -> return SliceInfo("Open dex file", sliceString.split(" ").last().trim())
-        sliceString.startsWith(SLICE_NAME_OBFUSCATED_TRACE_START) -> return SliceInfo("Obfuscated trace point", null)
-        sliceString[0] == '/' -> return SliceInfo("Load Dex files from classpath", null)
+    val startupEvents = mutableListOf<StartupEvent>()
 
-        else -> {
-            // Search the slice mapping patterns.
-            for (pattern in SLICE_MAPPERS) {
-                val matchResult = pattern.find(sliceString)
+    systemServerProc.asyncSlices.forEach { systemServerSlice ->
+        if (systemServerSlice.name.startsWith(SLICE_NAME_APP_LAUNCH)) {
 
-                if (matchResult != null) {
-                    val sliceType = matchResult.groups[1]!!.value.trim()
+            val newProcName    = systemServerSlice.name.split(':', limit = 2)[1].trim()
+            val newProc        = this.findProcess(newProcName, systemServerSlice.startTime, systemServerSlice.endTime)
+            val startProcSlice = systemServerProc.findFirstSlice(SLICE_NAME_PROC_START, newProcName, systemServerSlice.startTime, systemServerSlice.endTime)
+            val rfdSlice       = systemServerProc.findFirstSliceOrNull(SLICE_NAME_REPORT_FULLY_DRAWN, newProcName, systemServerSlice.startTime)
+            val firstSliceTime = newProc.threads.map { it.slices.firstOrNull()?.startTime ?: Double.POSITIVE_INFINITY }.min()!!
 
-                    val sliceDetails =
-                        if (matchResult.groups.size > 2 && !matchResult.groups[2]!!.value.isEmpty()) {
-                            matchResult.groups[2]!!.value.trim()
-                        } else {
-                            null
+            val schedSliceInfo : MutableMap<SchedulingState, Double> = mutableMapOf()
+            newProc.threads.first().schedSlices.forEach schedLoop@ { schedSlice ->
+                val origVal = schedSliceInfo.getOrDefault(schedSlice.state, 0.0)
+
+                when {
+                    schedSlice.startTime >= systemServerSlice.endTime -> return@schedLoop
+                    schedSlice.endTime <= systemServerSlice.endTime   -> schedSliceInfo[schedSlice.state] = origVal + schedSlice.duration
+                    else                                              -> {
+                        schedSliceInfo[schedSlice.state] = origVal + (systemServerSlice.endTime - schedSlice.startTime)
+                        return@schedLoop
+                    }
+                }
+            }
+
+            var undifferentiatedTime = 0.0
+
+            val allSlicesInfo : MutableAggregateSliceInfoMap = mutableMapOf()
+            val topLevelSliceInfo : MutableAggregateSliceInfoMap = mutableMapOf()
+            val undifferentiatedSliceInfo : MutableAggregateSliceInfoMap = mutableMapOf()
+            val nonNestedSliceInfo : MutableAggregateSliceInfoMap = mutableMapOf()
+
+            newProc.threads.first().traverseSlices(object : SliceTraverser {
+                // Our depth down an individual tree in the slice forest.
+                var treeDepth = -1
+                val sliceDepths: MutableMap<String, Int> = mutableMapOf()
+
+                var lastTopLevelSlice : Slice? = null
+
+                override fun beginSlice(slice : Slice) : TraverseAction {
+                    val sliceContents = parseSliceName(slice.name)
+
+                    ++this.treeDepth
+
+                    val sliceDepth = this.sliceDepths.getOrDefault(sliceContents.name, -1)
+                    this.sliceDepths[sliceContents.name] = sliceDepth + 1
+
+                    if (slice.startTime < systemServerSlice.endTime) {
+                        // This slice starts during the startup period.  If it
+                        // ends within the startup period we will record info
+                        // from this slice.  Either way we will visit its
+                        // children.
+
+                        if (this.treeDepth == 0 && this.lastTopLevelSlice != null) {
+                            undifferentiatedTime += (slice.startTime - this.lastTopLevelSlice!!.endTime)
                         }
 
-                    return SliceInfo(sliceType, sliceDetails)
-                }
-            }
+                        if (slice.endTime <= systemServerSlice.endTime) {
+                            // This slice belongs in our collection.
 
-            return SliceInfo("Unknown Slice", sliceString)
+                            // All Slice Timings
+                            aggregateSliceInfo(allSlicesInfo, sliceContents, slice.duration)
+
+                            // Undifferentiated Timings
+                            aggregateSliceInfo(undifferentiatedSliceInfo, sliceContents, slice.durationSelf)
+
+                            // Top-level timings
+                            if (this.treeDepth == 0) {
+                                aggregateSliceInfo(topLevelSliceInfo, sliceContents, slice.duration)
+                            }
+
+                            // Non-nested timings
+                            if (sliceDepths[sliceContents.name] == 0) {
+                                aggregateSliceInfo(nonNestedSliceInfo, sliceContents, slice.duration)
+                            }
+                        }
+
+                        return TraverseAction.VISIT_CHILDREN
+
+                    } else {
+                        // All contents of this slice occur after the startup
+                        // period has ended. We don't need to record anything
+                        // or traverse any children.
+                        return TraverseAction.DONE
+                    }
+                }
+
+                override fun endSlice(slice : Slice) {
+                    if (this.treeDepth == 0) {
+                        lastTopLevelSlice = slice
+                    }
+
+                    val sliceInfo = parseSliceName(slice.name)
+                    this.sliceDepths[sliceInfo.name] = this.sliceDepths[sliceInfo.name]!! - 1
+
+                    --this.treeDepth
+                }
+            })
+
+            startupEvents.add(
+                StartupEvent(newProc,
+                             newProcName,
+                             systemServerSlice.startTime,
+                             systemServerSlice.endTime,
+                             startProcSlice.duration,
+                             rfdSlice?.startTime,
+                             firstSliceTime,
+                             undifferentiatedTime,
+                             schedSliceInfo,
+                             allSlicesInfo,
+                             topLevelSliceInfo,
+                             undifferentiatedSliceInfo,
+                             nonNestedSliceInfo))
         }
     }
 
+    return startupEvents
+}
+
+fun aggregateSliceInfo(infoMap : MutableAggregateSliceInfoMap, sliceContents : SliceContents, duration : Double) {
+    val aggInfo = infoMap.getOrPut(sliceContents.name, ::AggregateSliceInfo)
+    ++aggInfo.count
+    aggInfo.totalTime += duration
+    if (sliceContents.value != null) {
+        val (uniqueValueCount, uniqueValueDuration) = aggInfo.values.getOrDefault(sliceContents.value as String, Pair(0, 0.0))
+        aggInfo.values[sliceContents.value as String] = Pair(uniqueValueCount + 1, uniqueValueDuration + duration)
+    }
 }

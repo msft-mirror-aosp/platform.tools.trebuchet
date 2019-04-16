@@ -25,24 +25,27 @@ import trebuchet.io.DataSlice
 import trebuchet.io.asSlice
 import trebuchet.model.Model
 import trebuchet.model.fragments.AsyncSlice
-import trebuchet.queries.SliceQueries
+import trebuchet.queries.slices.*
+import trebuchet.testutils.NeedsSampleData
 import java.io.File
 
 class ImportTaskTest {
-    @Test fun testImportCameraTrace() {
+    @Test @NeedsSampleData
+    fun testImportCameraTrace() {
         val model = import("hdr-0608-4-trace.html")
-        val slices = SliceQueries.selectAll(model) { it.name.startsWith("MergeShot")}
+        val slices = model.selectAll { it.name.startsWith("MergeShot")}
         assertEquals(2, slices.size)
         assertEquals(0.868, slices[0].duration, .001)
         assertEquals(0.866, slices[1].duration, .001)
     }
 
-    @Test fun testImportCalTrace1() {
+    @Test @NeedsSampleData
+    fun testImportCalTrace1() {
         val model = import("caltrace1.html")
         val counterName = "com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity#1"
         val process = model.processes.values.find { it.name == "surfaceflinger" }!!
         val thread = process.threads.find { it.name == "surfaceflinger" }!!
-        val slices = SliceQueries.selectAll(thread) { it.name == "handleMessageRefresh" }
+        val slices = thread.selectAll { it.name == "handleMessageRefresh" }
         assertEquals(103, slices.size)
         assertFalse(slices.any { it.duration <= 0.0 })
         val totalDuration = slices.map { it.duration }.reduce { a,b -> a+b }
@@ -54,7 +57,8 @@ class ImportTaskTest {
         assertFalse(counter.events.any { it.count < 0 || it.count > 2})
     }
 
-    @Test fun testImportSample() {
+    @Test @NeedsSampleData
+    fun testImportSample() {
         val model = import("sample.ftrace")
         val process = model.processes[6381]!!
         val thread = process.threads.find { it.name == "RenderThread" }!!

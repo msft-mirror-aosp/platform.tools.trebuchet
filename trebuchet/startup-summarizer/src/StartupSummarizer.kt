@@ -26,15 +26,15 @@
  */
 
 import java.io.File
-import trebuchet.model.Model
-import trebuchet.extras.parseTrace
-import trebuchet.model.base.Slice
-import trebuchet.queries.SliceQueries
-import trebuchet.queries.SliceTraverser
-import trebuchet.queries.TraverseAction
+
 import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.system.exitProcess
+
+import trebuchet.extras.parseTrace
+import trebuchet.model.SchedulingState
+import trebuchet.util.slices.*
+import trebuchet.util.time.*
 
 /*
  * Constants
@@ -71,15 +71,8 @@ enum class Temperature {
     WARM
 }
 
-data class StartupRecord(val appName : String,
-                         val startupTime : Double,
-                         val timeToFirstSlice : Double,
-                         val topLevelTimings : MutableMap<String, Double> = mutableMapOf(),
-                         val nonNestedTimings : MutableMap<String, Double> = mutableMapOf(),
-                         val undifferentiatedTimings : MutableMap<String, Double> = mutableMapOf())
-
-class CompilerRecord(val cold : MutableList<StartupRecord> = mutableListOf(),
-                     val warm : MutableList<StartupRecord> = mutableListOf()) {
+class CompilerRecord(val cold : MutableList<StartupEvent> = mutableListOf(),
+                     val warm : MutableList<StartupEvent> = mutableListOf()) {
 
     fun numSamples() : Int {
         return this.cold.size + this.warm.size
@@ -95,8 +88,6 @@ class ApplicationRecord(val quicken : CompilerRecord = CompilerRecord(),
     }
 }
 
-class SystemServerException: Exception("Unable to locate system server")
-
 /*
  * Class Extensions
  */
@@ -105,7 +96,7 @@ class SystemServerException: Exception("Unable to locate system server")
  * Helper Functions
  */
 
-fun addStartupRecord(records : MutableMap<String, ApplicationRecord>, record : StartupRecord, appName : String, compiler : CompilerFilter, temperature : Temperature) {
+fun addStartupRecord(records : MutableMap<String, ApplicationRecord>, startupEvent : StartupEvent, appName : String, compiler : CompilerFilter, temperature : Temperature) {
     val applicationRecord = records.getOrPut(appName) { ApplicationRecord() }
 
     val compilerRecord =
@@ -118,7 +109,7 @@ fun addStartupRecord(records : MutableMap<String, ApplicationRecord>, record : S
     when (temperature) {
         Temperature.COLD -> compilerRecord.cold
         Temperature.WARM -> compilerRecord.warm
-    }.add(record)
+    }.add(startupEvent)
 }
 
 fun averageAndStandardDeviation(values : List<Double>) : Pair<Double, Double> {
@@ -132,114 +123,6 @@ fun averageAndStandardDeviation(values : List<Double>) : Pair<Double, Double> {
     }
 
     return Pair(averageValue, sqrt(sumOfSquaredDiffs / values.size))
-}
-
-fun extractStartupRecords(model : Model) : List<StartupRecord> {
-    val records : MutableList<StartupRecord> = mutableListOf()
-
-    // TODO: Use unified reporting mechanism when it is implemented.
-    val systemServerIDs = model.findIDsByName(PROC_NAME_SYSTEM_SERVER) ?: throw SystemServerException()
-
-    val systemServerProc = model.processes[systemServerIDs.first]
-    val startedApps: MutableMap<Int, Pair<String, Double>> = mutableMapOf()
-
-    systemServerProc!!.threads.forEach { thread ->
-        SliceQueries.iterSlices(thread) { slice ->
-            if (slice.name.startsWith(SLICE_NAME_PROC_START)) {
-
-                val newProcName = slice.name.split(':', limit = 2)[1].trim()
-                val newProcIDs = model.findIDsByName(newProcName)
-
-                if (newProcIDs != null && !startedApps.containsKey(newProcIDs.first)) {
-                    startedApps[newProcIDs.first] = Pair(newProcName, slice.startTime)
-                }
-
-                // TODO: Use unified reporting mechanism when it is implemented.
-//                when {
-//                    newProcIDs == null -> println("\tUnable to find PID for process `$newProcName`")
-//                    startedApps.containsKey(newProcIDs.first) -> println("\tPID already mapped to started app")
-//                    else -> startedApps[newProcIDs.first] = Pair(newProcName, slice.startTime)
-//                }
-            }
-        }
-    }
-
-    startedApps.forEach { pid, (startedName, startupStartTime) ->
-        val process = model.processes[pid]
-        val mainThread = process!!.threads[0]
-
-        val startupEndTime = model.getStartupEndTime(mainThread, startupStartTime)
-
-        // Processes with end points defined by the default duration are currently noise.
-        if (startupEndTime.signal != "DefaultDuration") {
-
-            val newRecord = StartupRecord(startedName,
-                startupEndTime.timestamp - startupStartTime,
-                mainThread.slices.first().startTime - startupStartTime)
-
-            SliceQueries.traverseSlices(mainThread, object : SliceTraverser {
-                // Our depth down an individual tree in the slice forest.
-                var treeDepth = -1
-
-                val sliceDepths: MutableMap<String, Int> = mutableMapOf()
-
-                override fun beginSlice(slice: Slice): TraverseAction {
-                    val sliceInfo = parseSliceInfo(slice.name)
-
-                    ++this.treeDepth
-
-                    val sliceDepth = this.sliceDepths.getOrDefault(sliceInfo.type, -1)
-                    this.sliceDepths[sliceInfo.type] = sliceDepth + 1
-
-                    if (slice.startTime < startupEndTime.timestamp) {
-                        // This slice starts during the startup period.  If it
-                        // ends within the startup period we will record info
-                        // from this slice.  Either way we will visit its
-                        // children.
-
-                        if (slice.endTime <= startupEndTime.timestamp) {
-                            // Top-level timing
-                            if (this.treeDepth == 0) {
-                                val oldValue = newRecord.topLevelTimings.getOrDefault(sliceInfo.type, 0.0)
-                                newRecord.topLevelTimings[sliceInfo.type] = oldValue + slice.duration
-                            }
-
-                            if (INTERESTING_SLICES.contains(sliceInfo.type)) {
-                                // Undifferentiated timing
-                                var oldValue = newRecord.undifferentiatedTimings.getOrDefault(sliceInfo.type, 0.0)
-                                newRecord.undifferentiatedTimings[sliceInfo.type] = oldValue + slice.durationSelf
-
-                                // Non-nested timing
-                                if (sliceDepths[sliceInfo.type] == 0) {
-                                    oldValue = newRecord.nonNestedTimings.getOrDefault(sliceInfo.type, 0.0)
-                                    newRecord.nonNestedTimings[sliceInfo.type] = oldValue + slice.duration
-                                }
-                            }
-                        }
-
-                        return TraverseAction.VISIT_CHILDREN
-
-                    } else {
-                        // All contents of this slice occur after the startup
-                        // period has ended. We don't need to record anything
-                        // or traverse any children.
-                        return TraverseAction.DONE
-                    }
-                }
-
-                override fun endSlice(slice: Slice) {
-                    val sliceInfo = parseSliceInfo(slice.name)
-
-                    --this.treeDepth
-                    this.sliceDepths[sliceInfo.type] = this.sliceDepths[sliceInfo.type]!! - 1
-                }
-            })
-
-            records.add(newRecord)
-        }
-    }
-
-    return records
 }
 
 fun parseFileName(fileName : String) : Triple<String, CompilerFilter, Temperature> {
@@ -268,66 +151,102 @@ fun parseFileName(fileName : String) : Triple<String, CompilerFilter, Temperatur
     }
 }
 
-fun printAppRecord(record : ApplicationRecord) {
+fun printPlainText(records : MutableMap<String, ApplicationRecord>) {
+    records.forEach { appName, record ->
+        if (record.numSamples() > SAMPLE_THRESHOLD_APPLICATION) {
+            println("$appName:")
+            printAppRecordPlainText(record)
+            println()
+        }
+    }
+}
 
+fun printAppRecordPlainText(record : ApplicationRecord) {
     if (record.quicken.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tQuicken:")
-        printCompilerRecord(record.quicken)
+        printCompilerRecordPlainText(record.quicken)
     }
 
     if (record.speed.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tSpeed:")
-        printCompilerRecord(record.speed)
+        printCompilerRecordPlainText(record.speed)
     }
 
     if (record.speedProfile.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
         println("\tSpeed Profile:")
-        printCompilerRecord(record.speedProfile)
+        printCompilerRecordPlainText(record.speedProfile)
     }
 }
 
-fun printCompilerRecord(record : CompilerRecord) {
-
+fun printCompilerRecordPlainText(record : CompilerRecord) {
     if (record.cold.size > SAMPLE_THRESHOLD_TEMPERATURE) {
         println("\t\tCold:")
-        printSampleSet(record.cold)
+        printSampleSetPlainText(record.cold)
     }
 
     if (record.warm.size > SAMPLE_THRESHOLD_TEMPERATURE) {
         println("\t\tWarm:")
-        printSampleSet(record.warm)
+        printSampleSetPlainText(record.warm)
     }
 }
 
-fun printSampleSet(records : List<StartupRecord>) {
+fun printSampleSetPlainText(records : List<StartupEvent>) {
 
-    val (startupTimeAverage, startupTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.startupTime})
-    val (timeToFirstSliceAverage, timeToFirstSliceStandardDeviation) = averageAndStandardDeviation(records.map {it.timeToFirstSlice})
+    val (startupTimeAverage, startupTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.endTime - it.startTime})
+    val (timeToFirstSliceAverage, timeToFirstSliceStandardDeviation) = averageAndStandardDeviation(records.map {it.firstSliceTime - it.startTime})
+    val (undifferentiatedTimeAverage, undifferentiatedTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.undifferentiatedTime})
 
     println("\t\t\tAverage startup time:            ${startupTimeAverage.secondValueToMillisecondString()}")
     println("\t\t\tStartup time standard deviation: ${startupTimeStandardDeviation.secondValueToMillisecondString()}")
     println("\t\t\tAverage time to first slice:     ${timeToFirstSliceAverage.secondValueToMillisecondString()}")
     println("\t\t\tTTFS standard deviation:         ${timeToFirstSliceStandardDeviation.secondValueToMillisecondString()}")
+    println("\t\t\tAverage undifferentiated time:   ${undifferentiatedTimeAverage.secondValueToMillisecondString()}")
+    println("\t\t\tUDT standard deviation:          ${undifferentiatedTimeStandardDeviation.secondValueToMillisecondString()}")
+
+    if (records.first().reportFullyDrawnTime != null) {
+        val (rfdTimeAverage, rfdTimeStandardDeviation) = averageAndStandardDeviation(records.map { it.reportFullyDrawnTime!! - it.startTime})
+        println("\t\t\tAverage RFD time:                ${rfdTimeAverage.secondValueToMillisecondString()}")
+        println("\t\t\tRFD time standard deviation:     ${rfdTimeStandardDeviation.secondValueToMillisecondString()}")
+    }
+
+    println()
+
+    println("\t\t\tScheduling info:")
+    SchedulingState.values().toSortedSet().forEach { schedState ->
+        val (schedStateTimeAverage, schedStateTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.schedTimings.getOrDefault(schedState, 0.0)})
+
+        if (schedStateTimeAverage != 0.0) {
+            println(
+                "\t\t\t\t${schedState.friendlyName}: ${schedStateTimeAverage.secondValueToMillisecondString()} / ${schedStateTimeStandardDeviation.secondValueToMillisecondString()}")
+        }
+    }
+
     println()
 
     // Definition of printing helper.
-    fun printTimings(timingMaps : List<Map<String, Double>>) {
+    fun printSliceTimings(sliceInfos : List<AggregateSliceInfoMap>, filterSlices : Boolean) {
         val samples : MutableMap<String, MutableList<Double>> = mutableMapOf()
 
-        timingMaps.forEach { timingMap ->
-            timingMap.forEach {sliceType, duration ->
-                samples.getOrPut(sliceType) { mutableListOf() }.add(duration)
+        sliceInfos.forEach { sliceInfo ->
+            sliceInfo.forEach {sliceName, aggInfo ->
+                samples.getOrPut(sliceName, ::mutableListOf).add(aggInfo.totalTime)
             }
         }
 
-        samples.forEach {sliceType, sliceSamples ->
-            val (sliceDurationAverage, sliceDurationStandardDeviation) = averageAndStandardDeviation(sliceSamples)
+        samples.forEach {sliceName, sliceSamples ->
+            if (!filterSlices || INTERESTING_SLICES.contains(sliceName)) {
+                val (sliceDurationAverage, sliceDurationStandardDeviation) = averageAndStandardDeviation(
+                    sliceSamples)
 
-            println("\t\t\t\t$sliceType:")
+                println("\t\t\t\t$sliceName:")
 
-            println("\t\t\t\t\tAverage duration:     ${sliceDurationAverage.secondValueToMillisecondString()}")
-            println("\t\t\t\t\tStandard deviation:   ${sliceDurationStandardDeviation.secondValueToMillisecondString()}")
-            println("\t\t\t\t\tStartup time percent: %.2f%%".format((sliceDurationAverage / startupTimeAverage) * 100))
+                println(
+                    "\t\t\t\t\tAverage duration:     ${sliceDurationAverage.secondValueToMillisecondString()}")
+                println(
+                    "\t\t\t\t\tStandard deviation:   ${sliceDurationStandardDeviation.secondValueToMillisecondString()}")
+                println("\t\t\t\t\tStartup time percent: %.2f%%".format(
+                    (sliceDurationAverage / startupTimeAverage) * 100))
+            }
         }
     }
 
@@ -336,14 +255,66 @@ fun printSampleSet(records : List<StartupRecord>) {
      */
 
     println("\t\t\tTop-level timings:")
-    printTimings(records.map {it.topLevelTimings})
+    printSliceTimings(records.map {it.topLevelSliceInfo}, false)
     println()
     println("\t\t\tNon-nested timings:")
-    printTimings(records.map {it.nonNestedTimings})
+    printSliceTimings(records.map {it.nonNestedSliceInfo}, true)
     println()
     println("\t\t\tUndifferentiated timing:")
-    printTimings(records.map {it.undifferentiatedTimings})
+    printSliceTimings(records.map {it.undifferentiatedSliceInfo}, true)
     println()
+}
+
+fun printCSV(records : MutableMap<String, ApplicationRecord>) {
+    println("Application Name, Compiler Filter, Temperature, Startup Time Avg (ms), Startup Time SD (ms), Time-to-first-slice Avg (ms), Time-to-first-slice SD (ms), Report Fully Drawn Avg (ms), Report Fully Drawn SD (ms)")
+
+    records.forEach { appName, record ->
+        if (record.numSamples() > SAMPLE_THRESHOLD_APPLICATION) {
+            printAppRecordCSV(appName, record)
+        }
+    }
+}
+
+fun printAppRecordCSV(appName : String, record : ApplicationRecord) {
+    if (record.quicken.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "quicken", record.quicken)
+    }
+
+    if (record.speed.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "speed", record.speed)
+    }
+
+    if (record.speedProfile.numSamples() > SAMPLE_THRESHOLD_COMPILER) {
+        printCompilerRecordCSV(appName, "speed-profile", record.speedProfile)
+    }
+}
+
+fun printCompilerRecordCSV(appName : String, compilerFilter : String, record : CompilerRecord) {
+    if (record.cold.size > SAMPLE_THRESHOLD_TEMPERATURE) {
+        printSampleSetCSV(appName, compilerFilter, "cold", record.cold)
+    }
+
+    if (record.warm.size > SAMPLE_THRESHOLD_TEMPERATURE) {
+        printSampleSetCSV(appName, compilerFilter, "warm", record.warm)
+    }
+}
+
+fun printSampleSetCSV(appName : String, compilerFilter : String, temperature : String, records : List<StartupEvent>) {
+    print("$appName, $compilerFilter, $temperature, ")
+
+    val (startupTimeAverage, startupTimeStandardDeviation) = averageAndStandardDeviation(records.map {it.endTime - it.startTime})
+    print("%.3f, %.3f, ".format(startupTimeAverage * 1000, startupTimeStandardDeviation * 1000))
+
+    val (timeToFirstSliceAverage, timeToFirstSliceStandardDeviation) = averageAndStandardDeviation(records.map {it.firstSliceTime - it.startTime})
+    print("%.3f, %.3f,".format(timeToFirstSliceAverage * 1000, timeToFirstSliceStandardDeviation * 1000))
+
+    if (records.first().reportFullyDrawnTime != null) {
+        val (rfdTimeAverage, rfdTimeStandardDeviation) = averageAndStandardDeviation(records.map { it.reportFullyDrawnTime!! - it.startTime})
+        print(" %.3f, %.3f\n".format(rfdTimeAverage * 1000, rfdTimeStandardDeviation * 1000))
+
+    } else {
+        print(",\n")
+    }
 }
 
 /*
@@ -357,6 +328,7 @@ fun main(args: Array<String>) {
     }
 
     val records : MutableMap<String, ApplicationRecord> = mutableMapOf()
+    val exceptions : MutableList<Pair<String, Exception>> = mutableListOf()
 
     var processedFiles = 0
     var erroredFiles = 0
@@ -367,30 +339,32 @@ fun main(args: Array<String>) {
         val trace = parseTrace(File(fileName), false)
 
         try {
-            val traceRecords : List<StartupRecord> = extractStartupRecords(trace)
+            val traceStartupEvents : List<StartupEvent> = trace.getStartupEvents()
 
-            ++processedFiles
-
-            print("\rProgress: $processedFiles ($erroredFiles) / ${args.size}")
-
-            traceRecords.forEach { startupRecord ->
-                addStartupRecord(records, startupRecord, startupRecord.appName, compiler, temperature)
+            traceStartupEvents.forEach { startupEvent ->
+                addStartupRecord(records, startupEvent, startupEvent.name, compiler,
+                                 temperature)
             }
 
-        } catch (e: SystemServerException) {
-            ++processedFiles
+        } catch (e: Exception) {
+            exceptions.add(Pair(fileName, e))
             ++erroredFiles
+        } finally {
+            ++processedFiles
+
             print("\rProgress: $processedFiles ($erroredFiles) / ${args.size}")
         }
     }
 
     println()
 
-    records.forEach { appName, record ->
-        if (record.numSamples() > SAMPLE_THRESHOLD_APPLICATION) {
-            println("$appName:")
-            printAppRecord(record)
-            println()
+//    printPlainText(records)
+    printCSV(records)
+
+    if (exceptions.count() > 0) {
+        println("Exceptions:")
+        exceptions.forEach { (fileName, exception) ->
+            println("\t$fileName: $exception${if (exception.message != null) "(${exception.message})" else ""}")
         }
     }
 }
