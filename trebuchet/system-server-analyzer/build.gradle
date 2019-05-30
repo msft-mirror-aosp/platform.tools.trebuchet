@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2019 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-rootProject.name = 'TrebuchetProject'
+apply plugin: 'java'
+apply plugin: 'application'
+apply plugin: 'kotlin-platform-jvm'
 
-// --------- Core JVM ---------- //
+sourceCompatibility = 1.8
+mainClassName = "SystemServerAnalyzerKt"
 
-include 'core:model'
-include 'core:common'
+sourceSets {
+    main.kotlin.srcDirs += 'src'
+}
 
-// -------- Main outputs ------------ //
-
-include 'trebuchet:analyzer'
-include 'trebuchet:startup-analyzer'
-include 'trebuchet:startup-common'
-include 'trebuchet:startup-summarizer'
-include 'trebuchet:system-server-analyzer'
-include 'trebuchet:traceutils'
-include 'trebuchet:viewer'
+dependencies {
+    compile project(":core:common")
+    compile project(":core:model")
+    compile project(":trebuchet:startup-common")
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+}
