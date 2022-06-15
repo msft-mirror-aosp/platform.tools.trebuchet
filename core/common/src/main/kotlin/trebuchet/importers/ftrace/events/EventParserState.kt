@@ -26,7 +26,7 @@ import trebuchet.util.StringCache
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
-const val FtraceLineRE = """^ *(.{1,16})-(\d+) +(?:\( *(\d+)?-*\) )?\[(\d+)] (?:[dX.][^\s]+)? *([\d.]*): *([^:]*): *(.*) *$"""
+const val FtraceLineRE = """^ *(.{1,16})-(\d+) +(?:\( *(\d+)?-*\) )?\[(\d+)] (?:[dX.]...)? *([\d.]*): *([^:]*): *(.*) *$"""
 
 interface FtraceEventDetails {
     fun import(event: FtraceEvent, state: FtraceImporterState)
